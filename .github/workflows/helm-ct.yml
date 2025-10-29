@@ -11,7 +11,42 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: azure/setup-helm@v4
+      - name: Install Helm (retry + fallback)
+        run: |
+          set -euo pipefail
+          VERSION="v3.18.4"
+          echo "Installing Helm ${VERSION}"
+          URLS=(
+            "https://get.helm.sh/helm-${VERSION}-linux-amd64.tar.gz"
+            "https://github.com/helm/helm/releases/download/${VERSION}/helm-${VERSION}-linux-amd64.tar.gz"
+          )
+
+          for url in "${URLS[@]}"; do
+            echo "Trying to download Helm from: $url"
+            if curl -fSL --retry 5 --retry-delay 10 -o /tmp/helm.tar.gz "$url"; then
+              tar -xzf /tmp/helm.tar.gz -C /tmp
+              sudo mv /tmp/linux-amd64/helm /usr/local/bin/helm
+              sudo chmod +x /usr/local/bin/helm
+              echo "Helm installed from $url"
+              helm version --short || true
+              break
+            else
+              echo "Download failed from $url"
+            fi
+          done
+
+          if ! command -v helm >/dev/null 2>&1; then
+            echo "Helm binary not found after downloads, attempting apt-get fallback"
+            sudo apt-get update && sudo apt-get install -y helm || true
+          fi
+
+          if ! command -v helm >/dev/null 2>&1; then
+            echo "ERROR: helm was not installed. Check network access to get.helm.sh or GitHub releases."
+            exit 1
+          fi
+
+      - name: Helm version
+        run: helm version --short || true
       - name: Setup chart-testing
         uses: helm/chart-testing-action@v2.6.1
       - name: Run chart-testing (lint + version bump)

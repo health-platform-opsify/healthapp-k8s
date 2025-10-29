@@ -17,15 +17,72 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        envfile: [values-dev.yaml, values-qa.yaml, values-staging.yaml, values-prod.yaml]
+        envfile:
+          - ../../environments/dev/values.yaml
+          - ../../environments/qa/values.yaml
+          - ../../environments/staging/values.yaml
+          - ../../environments/prod/values.yaml
     steps:
       - uses: actions/checkout@v4
 
       - name: Set CHART_PATH
         run: echo "CHART_PATH=charts/healthapp-backend" >> $GITHUB_ENV
 
-      - name: Setup Helm
-        uses: azure/setup-helm@v4
+      - name: Restore cache for Helm download
+        uses: actions/cache@v4
+        with:
+          path: .cache/helm
+          key: helm-v3.18.4
+
+      - name: Install Helm (retry + fallback)
+        run: |
+          set -euo pipefail
+          VERSION="v3.18.4"
+          CACHE_DIR=".cache/helm"
+          CACHE_TARBALL="$CACHE_DIR/helm-${VERSION}.tar.gz"
+          mkdir -p "$CACHE_DIR"
+          echo "Installing Helm ${VERSION}"
+
+          if [ -f "$CACHE_TARBALL" ]; then
+            echo "Found cached Helm tarball at $CACHE_TARBALL, using it"
+            tar -xzf "$CACHE_TARBALL" -C /tmp
+            sudo mv /tmp/linux-amd64/helm /usr/local/bin/helm
+            sudo chmod +x /usr/local/bin/helm
+            helm version --short || true
+            exit 0
+          fi
+
+          URLS=(
+            "https://get.helm.sh/helm-${VERSION}-linux-amd64.tar.gz"
+            "https://github.com/helm/helm/releases/download/${VERSION}/helm-${VERSION}-linux-amd64.tar.gz"
+          )
+
+          for url in "${URLS[@]}"; do
+            echo "Trying to download Helm from: $url"
+            if curl -fSL --retry 5 --retry-delay 10 -o "$CACHE_TARBALL" "$url"; then
+              tar -xzf "$CACHE_TARBALL" -C /tmp
+              sudo mv /tmp/linux-amd64/helm /usr/local/bin/helm
+              sudo chmod +x /usr/local/bin/helm
+              echo "Helm installed from $url"
+              helm version --short || true
+              break
+            else
+              echo "Download failed from $url"
+            fi
+          done
+
+          if ! command -v helm >/dev/null 2>&1; then
+            echo "Helm binary not found after downloads, attempting apt-get fallback"
+            sudo apt-get update && sudo apt-get install -y helm || true
+          fi
+
+          if ! command -v helm >/dev/null 2>&1; then
+            echo "ERROR: helm was not installed. Check network access to get.helm.sh or GitHub releases."
+            exit 1
+          fi
+
+      - name: Helm version
+        run: helm version --short || true
 
       - name: Helm lint
         run: helm lint "$CHART_PATH"
@@ -33,31 +90,40 @@ jobs:
       - name: Render manifests (Helm template)
         run: |
           mkdir -p render
-          helm template healthapp-backend "$CHART_PATH" \
-            -f "$CHART_PATH/${{ matrix.envfile }}" \
-            --include-crds \
-            > "render/${{ matrix.envfile }}.yaml"
+          helm template healthapp-backend charts/healthapp-backend \
+            -f charts/healthapp-backend/values.yaml \
+            -f ${{ matrix.envfile }} \
+            --include-crds > "render/$(basename ${{ matrix.envfile }}).yaml"
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL -o kubeconform.tar.gz "https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz"
+          sudo tar -xzf kubeconform.tar.gz -C /usr/local/bin
+          sudo chmod +x /usr/local/bin/kubeconform
 
       - name: Kubeconform (schema validation)
-        uses: yannh/kubeconform-action@v1
-        with:
-          kube-version: 1.28.0
-          output: tap
-          summary: true
-          files: render/${{ matrix.envfile }}.yaml
+        run: |
+          # validate the rendered file for this matrix envfile
+          kubeconform -kubernetes-version 1.28.0 -output tap -summary "render/$(basename ${{ matrix.envfile }}).yaml"
+
+      - name: Install kube-linter
+        run: |
+          curl -sSL -o kube-linter.tar.gz "https://github.com/stackrox/kube-linter/releases/latest/download/kube-linter-linux-amd64.tar.gz"
+          sudo tar -xzf kube-linter.tar.gz -C /usr/local/bin
+          sudo chmod +x /usr/local/bin/kube-linter
 
       - name: KubeLinter (policy/anti-pattern checks)
-        uses: stackrox/kube-linter-action@v1.0.8
-        with:
-          directory: render
-          config: |
-            checks:
-              exclude:
-                - dangling-service
-            include:
-              - no-readiness-probe
-              - no-liveness-probe
-              - run-as-non-root
-              - privilege-escalation-container
-              - memory-requirements
-              - cpu-requirements
+        run: |
+          cat > /tmp/kube-linter-config.yaml <<'EOF'
+checks:
+  exclude:
+    - dangling-service
+  include:
+    - no-readiness-probe
+    - no-liveness-probe
+    - run-as-non-root
+    - privilege-escalation-container
+    - memory-requirements
+    - cpu-requirements
+EOF
+          kube-linter lint render --config /tmp/kube-linter-config.yaml

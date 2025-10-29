@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/OWNER/healthapp-backend
+  repository: ghcr.io/health-platform-opsify/healthapp-backend
   tag: latest
   pullPolicy: IfNotPresent
 
