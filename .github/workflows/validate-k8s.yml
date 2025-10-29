@@ -28,11 +28,30 @@ jobs:
       - name: Set CHART_PATH
         run: echo "CHART_PATH=charts/healthapp-backend" >> $GITHUB_ENV
 
+      - name: Restore cache for Helm download
+        uses: actions/cache@v4
+        with:
+          path: .cache/helm
+          key: helm-v3.18.4
+
       - name: Install Helm (retry + fallback)
         run: |
           set -euo pipefail
           VERSION="v3.18.4"
+          CACHE_DIR=".cache/helm"
+          CACHE_TARBALL="$CACHE_DIR/helm-${VERSION}.tar.gz"
+          mkdir -p "$CACHE_DIR"
           echo "Installing Helm ${VERSION}"
+
+          if [ -f "$CACHE_TARBALL" ]; then
+            echo "Found cached Helm tarball at $CACHE_TARBALL, using it"
+            tar -xzf "$CACHE_TARBALL" -C /tmp
+            sudo mv /tmp/linux-amd64/helm /usr/local/bin/helm
+            sudo chmod +x /usr/local/bin/helm
+            helm version --short || true
+            exit 0
+          fi
+
           URLS=(
             "https://get.helm.sh/helm-${VERSION}-linux-amd64.tar.gz"
             "https://github.com/helm/helm/releases/download/${VERSION}/helm-${VERSION}-linux-amd64.tar.gz"
@@ -40,8 +59,8 @@ jobs:
 
           for url in "${URLS[@]}"; do
             echo "Trying to download Helm from: $url"
-            if curl -fSL --retry 5 --retry-delay 10 -o /tmp/helm.tar.gz "$url"; then
-              tar -xzf /tmp/helm.tar.gz -C /tmp
+            if curl -fSL --retry 5 --retry-delay 10 -o "$CACHE_TARBALL" "$url"; then
+              tar -xzf "$CACHE_TARBALL" -C /tmp
               sudo mv /tmp/linux-amd64/helm /usr/local/bin/helm
               sudo chmod +x /usr/local/bin/helm
               echo "Helm installed from $url"
@@ -61,6 +80,9 @@ jobs:
             echo "ERROR: helm was not installed. Check network access to get.helm.sh or GitHub releases."
             exit 1
           fi
+
+      - name: Helm version
+        run: helm version --short || true
 
       - name: Helm lint
         run: helm lint "$CHART_PATH"
