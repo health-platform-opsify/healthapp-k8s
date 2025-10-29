@@ -1,0 +1,63 @@
+name: validate-k8s
+on:
+  pull_request:
+    paths:
+      - 'charts/**'
+      - 'gitops/**'
+      - '.github/**'
+permissions:
+  contents: read
+concurrency:
+  group: validate-k8s-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-validate:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        envfile: [values-dev.yaml, values-qa.yaml, values-staging.yaml, values-prod.yaml]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set CHART_PATH
+        run: echo "CHART_PATH=charts/healthapp-backend" >> $GITHUB_ENV
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Helm lint
+        run: helm lint "$CHART_PATH"
+
+      - name: Render manifests (Helm template)
+        run: |
+          mkdir -p render
+          helm template healthapp-backend "$CHART_PATH" \
+            -f "$CHART_PATH/${{ matrix.envfile }}" \
+            --include-crds \
+            > "render/${{ matrix.envfile }}.yaml"
+
+      - name: Kubeconform (schema validation)
+        uses: yannh/kubeconform-action@v1
+        with:
+          kube-version: 1.28.0
+          output: tap
+          summary: true
+          files: render/${{ matrix.envfile }}.yaml
+
+      - name: KubeLinter (policy/anti-pattern checks)
+        uses: stackrox/kube-linter-action@v1.0.8
+        with:
+          directory: render
+          config: |
+            checks:
+              exclude:
+                - dangling-service
+            include:
+              - no-readiness-probe
+              - no-liveness-probe
+              - run-as-non-root
+              - privilege-escalation-container
+              - memory-requirements
+              - cpu-requirements

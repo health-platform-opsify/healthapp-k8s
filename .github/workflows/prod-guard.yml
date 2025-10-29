@@ -1,0 +1,26 @@
+name: prod-guard
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+permissions:
+  contents: read
+jobs:
+  require-label-for-prod:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect prod file changes
+        id: diff
+        run: |
+          git fetch origin ${{ github.base_ref }} --depth=1
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | tr '\n' ' ')
+          echo "changed=$CHANGED" >> $GITHUB_OUTPUT
+
+      - name: Fail if prod changed without label
+        if: contains(steps.diff.outputs.changed, 'charts/healthapp-backend/values-prod.yaml')
+        run: |
+          echo "Checking for label 'approved-for-prod'..."
+          gh pr view ${{ github.event.pull_request.number }} --json labels -q '.labels[].name' | grep -q '^approved-for-prod$' \
+            && echo "Label present." || (echo "::error::Missing required label 'approved-for-prod' for prod changes"; exit 1)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

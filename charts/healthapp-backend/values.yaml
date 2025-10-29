@@ -1,0 +1,30 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/OWNER/healthapp-backend
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  port: 8000
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+ingress:
+  enabled: true
+  className: "traefik"
+  hosts:
+    - host: app.dev.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+env:
+  - name: LOG_LEVEL
+    value: INFO

@@ -1,0 +1,9 @@
+image:
+  repository: ghcr.io/OWNER/healthapp-backend
+  tag: latest
+ingress:
+  hosts:
+    - host: app.qa.local
+      paths:
+        - path: /
+          pathType: Prefix

@@ -1,0 +1,11 @@
+# Chart structure & templates require both Dev Leads and DevOps Leads
+charts/**                              @health-platform-opsify/dev-leads                @health-platform-opsify/devops-leads
+
+# Env ownership (who can approve changes)
+charts/healthapp-backend/values-dev.yaml       @health-platform-opsify/devops @health-platform-opsify/dev-leads
+charts/healthapp-backend/values-qa.yaml        @health-platform-opsify/devops-leads
+charts/healthapp-backend/values-staging.yaml   @health-platform-opsify/devops-leads
+charts/healthapp-backend/values-prod.yaml      @health-platform-opsify/devops-leads
+
+# ArgoCD Applications (gitops entrypoints) are protected by DevOps Leads
+gitops/**                              @health-platform-opsify/devops-leads

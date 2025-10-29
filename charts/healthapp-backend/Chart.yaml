@@ -1,0 +1,6 @@
+apiVersion: v2
+name: healthapp-backend
+description: Demo Helm chart for HealthApp backend
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
