@@ -3,26 +3,23 @@ kind: Application
 metadata:
   name: healthapp-backend-dev
   namespace: argocd
+  labels: { env: dev }
 spec:
   project: default
-  source:
-    repoURL: https://github.com/ORG/healthapp-k8s
-    targetRevision: HEAD
-    path: environments/dev
-    helm:
-      valueFiles:
-        - values.yaml
-      parameters:
-        - name: image.repository
-          value: ghcr.io/OWNER/healthapp-backend
-        - name: image.tag
-          value: latest
   destination:
     server: https://kubernetes.default.svc
     namespace: demo-dev
+  source:
+    repoURL: https://github.com/health-platform-opsify/healthapp-k8s.git
+    targetRevision: main
+    path: charts/healthapp-backend
+    helm:
+      valueFiles:
+        - ../environments/dev/values.yaml
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+  revisionHistoryLimit: 5

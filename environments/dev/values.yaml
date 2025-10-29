@@ -1,9 +1,11 @@
 image:
-  repository: ghcr.io/OWNER/healthapp-backend
+  repository: ghcr.io/health-platform-opsify/healthapp-backend
   tag: latest
 ingress:
-  hosts:
-    - host: app.dev.local
-      paths:
-        - path: /
-          pathType: Prefix
+  enabled: false
+# ingress:
+#   hosts:
+#     - host: app.dev.local
+#       paths:
+#         - path: /
+#           pathType: Prefix
